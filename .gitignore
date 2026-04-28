@@ -1,0 +1,6 @@
+node_modules
+auth_info_baileys
+session.json
+.env
+.npm
+.cache
