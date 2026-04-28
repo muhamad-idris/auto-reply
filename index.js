@@ -14,7 +14,12 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 const app = express();
 const port = process.env.PORT || 3000;
 
-const SESSION_FILE = "session.json";
+// Vercel storage configuration
+const isVercel = process.env.VERCEL || process.env.NODE_ENV === "production";
+const STORAGE_DIR = isVercel ? "/tmp" : ".";
+const SESSION_FILE = `${STORAGE_DIR}/session.json`;
+const AUTH_DIR = `${STORAGE_DIR}/auth_info_baileys`;
+
 const SYSTEM_PROMPT = "Jawablah setiap pertanyaan dengan sangat singkat, padat, dan jelas. Hindari basa-basi agar hemat token. Gunakan Bahasa Indonesia. aku memasang kamu di whatsapp, jadi sesuaikan response kamu";
 
 function loadSessions() {
@@ -95,7 +100,12 @@ const question = (text) => {
 };
 
 async function connectToWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState("auth_info_baileys");
+    // Check if AUTH_DIR exists locally if not on Vercel
+    if (!isVercel && !fs.existsSync(AUTH_DIR)) {
+        fs.mkdirSync(AUTH_DIR, { recursive: true });
+    }
+
+    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     const { version, isLatest } = await fetchLatestBaileysVersion();
 
     console.log(`using WA v${version.join(".")}, isLatest: ${isLatest}`);
