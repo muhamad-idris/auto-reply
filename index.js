@@ -1,53 +1,19 @@
-import makeWASocket, {
+const {
+    default: makeWASocket,
     useMultiFileAuthState,
     DisconnectReason,
     fetchLatestBaileysVersion,
     makeCacheableSignalKeyStore,
-} from "@whiskeysockets/baileys";
-import pino from "pino";
-import { Boom } from "@hapi/boom";
-import readline from "readline";
-import fs from "fs";
-import path from "path";
-import express from "express";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+    jidDecode
+} = require("@whiskeysockets/baileys");
+const pino = require("pino");
+const { Boom } = require("@hapi/boom");
+const readline = require("readline");
+const fs = require("fs");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-const app = express();
-const port = process.env.PORT || 3000;
-
-// Vercel storage configuration
-const isVercel = process.env.VERCEL || process.env.NODE_ENV === "production";
-const STORAGE_DIR = isVercel ? "/tmp" : ".";
-const SESSION_FILE = path.join(STORAGE_DIR, "session.json");
-const AUTH_DIR = path.join(STORAGE_DIR, "auth_info_baileys");
-const LOCAL_AUTH_DIR = path.resolve(process.cwd(), "auth_info_baileys");
-
-const SYSTEM_PROMPT = "Jawablah setiap pertanyaan dengan sangat singkat, padat, dan jelas. Hindari basa-basi agar hemat token. Gunakan Bahasa Indonesia. aku memasang kamu di whatsapp, jadi sesuaikan response kamu";
-
-// Helper to copy directory recursively
-function copyDir(src, dest) {
-    try {
-        if (!fs.existsSync(src)) {
-            console.log(`Source dir ${src} does not exist.`);
-            return;
-        }
-        if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
-        
-        const entries = fs.readdirSync(src, { withFileTypes: true });
-        for (let entry of entries) {
-            const srcPath = path.join(src, entry.name);
-            const destPath = path.join(dest, entry.name);
-            if (entry.isDirectory()) {
-                copyDir(srcPath, destPath);
-            } else {
-                fs.copyFileSync(srcPath, destPath);
-            }
-        }
-        console.log(`Successfully copied ${src} to ${dest}`);
-    } catch (err) {
-        console.error(`Error copying directory: ${err.message}`);
-    }
-}
+const SESSION_FILE = "session.json";
+const SYSTEM_PROMPT = "Jawablah setiap pertanyaan dengan sangat singkat, padat, dan jelas. Hindari basa-basi agar hemat token. Gunakan Bahasa Indonesia.";
 
 function loadSessions() {
     try {
@@ -70,9 +36,7 @@ function saveSessions(sessions) {
 
 let chatSessions = loadSessions();
 
-// Use environment variable for API Key
-const API_KEY = process.env.GEMINI_API_KEY || "AIzaSyCnONwhUxL4sbkLxqhAMcC18csLJ7joDOM";
-const genAI = new GoogleGenerativeAI(API_KEY);
+const genAI = new GoogleGenerativeAI("AIzaSyCnONwhUxL4sbkLxqhAMcC18csLJ7joDOM");
 const modelsToTry = [
     "gemini-flash-latest",
     "gemini-flash-lite-latest",
@@ -127,30 +91,7 @@ const question = (text) => {
 };
 
 async function connectToWhatsApp() {
-    console.log(`Environment: ${isVercel ? "Vercel" : "Local"}`);
-    console.log(`Current Working Dir: ${process.cwd()}`);
-    console.log(`Local Auth Dir: ${LOCAL_AUTH_DIR}`);
-    console.log(`Target Auth Dir: ${AUTH_DIR}`);
-
-    try {
-        const files = fs.readdirSync(process.cwd());
-        console.log(`Files in CWD: ${files.join(", ")}`);
-    } catch (e) {
-        console.log(`Could not list CWD: ${e.message}`);
-    }
-
-    // If on Vercel, copy pushed session from project root to /tmp
-    if (isVercel && fs.existsSync(LOCAL_AUTH_DIR)) {
-        console.log("Copying session from project root to /tmp...");
-        copyDir(LOCAL_AUTH_DIR, AUTH_DIR);
-    }
-
-    // Ensure AUTH_DIR exists
-    if (!fs.existsSync(AUTH_DIR)) {
-        fs.mkdirSync(AUTH_DIR, { recursive: true });
-    }
-
-    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+    const { state, saveCreds } = await useMultiFileAuthState("auth_info_baileys");
     const { version, isLatest } = await fetchLatestBaileysVersion();
 
     console.log(`using WA v${version.join(".")}, isLatest: ${isLatest}`);
@@ -158,7 +99,7 @@ async function connectToWhatsApp() {
     const sock = makeWASocket({
         version,
         logger: pino({ level: "silent" }),
-        printQRInTerminal: false,
+        printQRInTerminal: false, // Set to false because we use pairing code
         auth: {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" })),
@@ -168,28 +109,9 @@ async function connectToWhatsApp() {
 
     // Pairing code logic
     if (!sock.authState.creds.registered) {
-        console.log("Not registered. Requesting pairing code...");
-        const phoneNumber = process.env.PHONE_NUMBER;
-        if (phoneNumber) {
-            setTimeout(async () => {
-                try {
-                    const code = await sock.requestPairingCode(phoneNumber.trim());
-                    console.log(`\nYour Pairing Code: \x1b[32m${code}\x1b[0m\n`);
-                } catch (err) {
-                    console.error("Error requesting pairing code:", err);
-                }
-            }, 3000);
-        } else {
-            if (process.stdin.isTTY) {
-                const num = await question("Please enter your mobile number (with country code, e.g. 628xxx): ");
-                const code = await sock.requestPairingCode(num.trim());
-                console.log(`\nYour Pairing Code: \x1b[32m${code}\x1b[0m\n`);
-            } else {
-                console.log("No PHONE_NUMBER env found and not in TTY. Cannot request pairing code.");
-            }
-        }
-    } else {
-        console.log("Already registered and logged in!");
+        const phoneNumber = await question("Please enter your mobile number (with country code, e.g. 628xxx): ");
+        const code = await sock.requestPairingCode(phoneNumber.trim());
+        console.log(`\nYour Pairing Code: \x1b[32m${code}\x1b[0m\n`);
     }
 
     sock.ev.on("connection.update", (update) => {
@@ -215,6 +137,7 @@ async function connectToWhatsApp() {
         const from = msg.key.remoteJid;
         const type = Object.keys(msg.message)[0];
 
+        // Comprehensive content extraction
         let content = "";
         if (type === "conversation") {
             content = msg.message.conversation;
@@ -232,6 +155,7 @@ async function connectToWhatsApp() {
             content = msg.message.templateButtonReplyMessage.selectedId;
         }
 
+        // Handle nested messages (ephemeral, viewonce)
         if (!content && (type === "viewOnceMessage" || type === "ephemeralMessage")) {
             const nestedType = Object.keys(msg.message[type].message)[0];
             if (nestedType === "conversation") {
@@ -241,10 +165,11 @@ async function connectToWhatsApp() {
             }
         }
 
-        if (!content) return;
+        if (!content) return; // Skip if still empty (protocol messages, etc.)
 
         console.log(`Received message from ${from}: ${content}`);
 
+        // Simple auto reply
         const lowerContent = content.toLowerCase();
         const prefix = ".";
         if (lowerContent.startsWith(prefix)) {
@@ -264,9 +189,11 @@ async function connectToWhatsApp() {
 
                     const response = await getAIResponse(prompt, chatSessions[from]);
 
+                    // Update history
                     chatSessions[from].push({ role: "user", parts: [{ text: prompt }] });
                     chatSessions[from].push({ role: "model", parts: [{ text: response }] });
 
+                    // Keep last 10 messages to save tokens
                     if (chatSessions[from].length > 20) {
                         chatSessions[from] = chatSessions[from].slice(-20);
                     }
@@ -284,12 +211,3 @@ async function connectToWhatsApp() {
 }
 
 connectToWhatsApp();
-
-// Express server for Vercel
-app.get("/", (req, res) => {
-    res.send("WhatsApp Bot is running!");
-});
-
-app.listen(port, () => {
-    console.log(`Server is listening on port ${port}`);
-});
