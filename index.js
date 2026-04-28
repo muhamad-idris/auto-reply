@@ -128,8 +128,16 @@ const question = (text) => {
 
 async function connectToWhatsApp() {
     console.log(`Environment: ${isVercel ? "Vercel" : "Local"}`);
+    console.log(`Current Working Dir: ${process.cwd()}`);
     console.log(`Local Auth Dir: ${LOCAL_AUTH_DIR}`);
     console.log(`Target Auth Dir: ${AUTH_DIR}`);
+
+    try {
+        const files = fs.readdirSync(process.cwd());
+        console.log(`Files in CWD: ${files.join(", ")}`);
+    } catch (e) {
+        console.log(`Could not list CWD: ${e.message}`);
+    }
 
     // If on Vercel, copy pushed session from project root to /tmp
     if (isVercel && fs.existsSync(LOCAL_AUTH_DIR)) {
