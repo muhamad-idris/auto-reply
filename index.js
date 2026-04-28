@@ -8,6 +8,7 @@ import pino from "pino";
 import { Boom } from "@hapi/boom";
 import readline from "readline";
 import fs from "fs";
+import path from "path";
 import express from "express";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
@@ -17,10 +18,36 @@ const port = process.env.PORT || 3000;
 // Vercel storage configuration
 const isVercel = process.env.VERCEL || process.env.NODE_ENV === "production";
 const STORAGE_DIR = isVercel ? "/tmp" : ".";
-const SESSION_FILE = `${STORAGE_DIR}/session.json`;
-const AUTH_DIR = `${STORAGE_DIR}/auth_info_baileys`;
+const SESSION_FILE = path.join(STORAGE_DIR, "session.json");
+const AUTH_DIR = path.join(STORAGE_DIR, "auth_info_baileys");
+const LOCAL_AUTH_DIR = path.resolve(process.cwd(), "auth_info_baileys");
 
 const SYSTEM_PROMPT = "Jawablah setiap pertanyaan dengan sangat singkat, padat, dan jelas. Hindari basa-basi agar hemat token. Gunakan Bahasa Indonesia. aku memasang kamu di whatsapp, jadi sesuaikan response kamu";
+
+// Helper to copy directory recursively
+function copyDir(src, dest) {
+    try {
+        if (!fs.existsSync(src)) {
+            console.log(`Source dir ${src} does not exist.`);
+            return;
+        }
+        if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+        
+        const entries = fs.readdirSync(src, { withFileTypes: true });
+        for (let entry of entries) {
+            const srcPath = path.join(src, entry.name);
+            const destPath = path.join(dest, entry.name);
+            if (entry.isDirectory()) {
+                copyDir(srcPath, destPath);
+            } else {
+                fs.copyFileSync(srcPath, destPath);
+            }
+        }
+        console.log(`Successfully copied ${src} to ${dest}`);
+    } catch (err) {
+        console.error(`Error copying directory: ${err.message}`);
+    }
+}
 
 function loadSessions() {
     try {
@@ -100,8 +127,18 @@ const question = (text) => {
 };
 
 async function connectToWhatsApp() {
-    // Check if AUTH_DIR exists locally if not on Vercel
-    if (!isVercel && !fs.existsSync(AUTH_DIR)) {
+    console.log(`Environment: ${isVercel ? "Vercel" : "Local"}`);
+    console.log(`Local Auth Dir: ${LOCAL_AUTH_DIR}`);
+    console.log(`Target Auth Dir: ${AUTH_DIR}`);
+
+    // If on Vercel, copy pushed session from project root to /tmp
+    if (isVercel && fs.existsSync(LOCAL_AUTH_DIR)) {
+        console.log("Copying session from project root to /tmp...");
+        copyDir(LOCAL_AUTH_DIR, AUTH_DIR);
+    }
+
+    // Ensure AUTH_DIR exists
+    if (!fs.existsSync(AUTH_DIR)) {
         fs.mkdirSync(AUTH_DIR, { recursive: true });
     }
 
@@ -123,6 +160,7 @@ async function connectToWhatsApp() {
 
     // Pairing code logic
     if (!sock.authState.creds.registered) {
+        console.log("Not registered. Requesting pairing code...");
         const phoneNumber = process.env.PHONE_NUMBER;
         if (phoneNumber) {
             setTimeout(async () => {
@@ -142,6 +180,8 @@ async function connectToWhatsApp() {
                 console.log("No PHONE_NUMBER env found and not in TTY. Cannot request pairing code.");
             }
         }
+    } else {
+        console.log("Already registered and logged in!");
     }
 
     sock.ev.on("connection.update", (update) => {
