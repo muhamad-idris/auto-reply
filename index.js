@@ -1,3 +1,4 @@
+require('dotenv').config();
 const {
     default: makeWASocket,
     useMultiFileAuthState,
@@ -36,7 +37,7 @@ function saveSessions(sessions) {
 
 let chatSessions = loadSessions();
 
-const genAI = new GoogleGenerativeAI("AIzaSyCnONwhUxL4sbkLxqhAMcC18csLJ7joDOM");
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 const modelsToTry = [
     "gemini-flash-latest",
     "gemini-flash-lite-latest",
