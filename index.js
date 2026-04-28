@@ -1,16 +1,15 @@
-const {
-    default: makeWASocket,
+import makeWASocket, {
     useMultiFileAuthState,
     DisconnectReason,
     fetchLatestBaileysVersion,
     makeCacheableSignalKeyStore,
-} = require("@whiskeysockets/baileys");
-const pino = require("pino");
-const { Boom } = require("@hapi/boom");
-const readline = require("readline");
-const fs = require("fs");
-const express = require("express");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+} from "@whiskeysockets/baileys";
+import pino from "pino";
+import { Boom } from "@hapi/boom";
+import readline from "readline";
+import fs from "fs";
+import express from "express";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -116,7 +115,6 @@ async function connectToWhatsApp() {
     if (!sock.authState.creds.registered) {
         const phoneNumber = process.env.PHONE_NUMBER;
         if (phoneNumber) {
-            // Delay slightly to ensure socket is ready
             setTimeout(async () => {
                 try {
                     const code = await sock.requestPairingCode(phoneNumber.trim());
@@ -126,7 +124,6 @@ async function connectToWhatsApp() {
                 }
             }, 3000);
         } else {
-            // Check if we are in an interactive environment
             if (process.stdin.isTTY) {
                 const num = await question("Please enter your mobile number (with country code, e.g. 628xxx): ");
                 const code = await sock.requestPairingCode(num.trim());
